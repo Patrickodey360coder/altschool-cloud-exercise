@@ -1,0 +1,15 @@
+<VirtualHost *:80>
+	ServerAdmin patrickodey419@gmail.com
+	ServerName patrickodey.live
+	ServerAlias www.patrickodey.live
+	DocumentRoot /var/www/patrickodey.live/public
+	<Directory /var/www/patrickodey.live>
+		Options Indexes FollowSymLinks MultiViews
+		AllowOverride All
+		allow from all
+		Order allow,deny
+		Require all granted
+	</Directory>
+	ErrorLog ${APACHE_LOG_DIR}/error.log
+	CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>

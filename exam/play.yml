@@ -1,0 +1,256 @@
+---
+- name: Application Setup Configuration
+  hosts: worker
+  remote_user: ubuntu
+  become: true
+  become_method: sudo
+  vars:
+    url: patrickodey.live
+
+  handlers:
+    - name: Reload Apache
+      service:
+        name: apache2
+        state: reloaded
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
+
+  tasks:
+  - name: Updating Ubuntu Repository
+    apt:
+      update_cache: true
+      cache_valid_time: 3600
+      force_apt_get: true
+
+  - name: Install software properties common
+    apt:
+      name: software-properties-common
+
+  - name: Install required package(python3-pymysql)
+    apt:
+      name: python3-pymysql
+      update_cache: yes
+      state: latest
+
+  - name: Install required package (Curl)
+    apt:
+      name: curl
+
+  - name: Install Mysql Server
+    apt:
+      name: mysql-server
+      update_cache: yes
+      state: latest
+
+  - name: Allow connection to port 80
+    ufw:
+      rule: allow
+      port: "80"
+
+  - name: Allow connection to port 443
+    ufw:
+      rule: allow
+      port: "443"
+
+  - name: Install Apache Web Server
+    apt:
+      name: apache2
+      state: present
+
+  - name: Enable Apache2
+    shell:
+      cmd: systemctl enable apache2
+
+  - name: Check Apache2
+    shell:
+      cmd: systemctl status apache2
+
+  - name: All Apache Firewall
+    ufw:
+      state: enabled
+      policy: allow
+
+  - name: Install Git using apt
+    apt:
+      name: git
+      state: present
+      update_cache: yes
+
+  - name: Clone Application from github
+    git:
+      repo: https://github.com/f1amy/laravel-realworld-example-app.git
+      dest: "/var/www/{{url}}"
+      update: yes
+    ignore_errors: true
+
+  - name: Updating the Repository
+    apt:
+      update_cache: yes
+
+  - name: Install Latest PHP
+    apt:
+      name: php8.1
+      state: present
+
+  - name: Install php extensions
+    apt:
+      pkg:
+        - php-common
+        - php-cli
+        - php-curl
+        - php-xml
+        - php-gd
+        - php-mbstring
+        - php-opcache
+        - libapache2-mod-php
+        - php-zip
+        - php-json
+        - php-tokenizer
+        - php-bcmath
+        - php-intl
+        - php-soap
+        - php-xmlrpc
+        - php-xsl
+        - php-cgi
+        - php-mysql
+      state: present
+      update_cache: yes
+
+  - name: Install required package(Composer)
+    shell:
+      cmd: curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php && sudo php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+
+  - name: Update Composer dependency
+    shell:
+      cmd: composer update --no-interaction && composer update friendsofphp/php-cs-fixer --no-interaction && composer create-project --no-interaction
+    args:
+      chdir: "/var/www/{{url}}"
+
+  - name: Update app mode
+    file:
+      path: "/var/www/{{url}}"
+      state: directory
+      owner: ubuntu
+      mode: "0775"
+
+  - name: Update app bootstrap mode
+    file:
+      path: "/var/www/{{url}}/bootstrap/cache"
+      state: directory
+      owner: ubuntu
+      mode: "0775"
+
+  - name: Change owner of folders
+    shell: |
+      chown -R ubuntu:www-data /var/www/{{url}}
+      chown -R ubuntu:www-data /var/www/{{url}}/storage
+      chown -R ubuntu:www-data /var/www/{{url}}/bootstrap/cache
+      sudo chmod -R 775  /var/www/{{url}}
+      sudo chmod -R 775  /var/www/{{url}}/bootstrap/cache
+      sudo chmod -R 775  /var/www/{{url}}/storage
+
+  - name: add virtualhost
+    copy:
+      src: ./virtual.conf.j2
+      dest: /etc/apache2/sites-available/{{url}}.conf
+    notify: Reload Apache
+
+  - name: Enable new site
+    shell: /usr/sbin/a2ensite  "{{url}}.conf"
+    notify: Reload Apache
+
+  - name: Disable default Apache site
+    shell: /usr/sbin/a2dissite 000-default.conf
+    notify: Reload Apache
+
+  - name: Remove Default Conf
+    file:
+      path: /etc/apache2/sites-enabled/000-default.conf
+      state: absent
+
+  - name: enable rewrite
+    shell: a2enmod rewrite
+    become: yes
+
+  - name: Set MySql Password
+    mysql_user:
+      name: ansible
+      password: passpass
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+    no_log: true
+
+  - name: Remove anonymous user accounts
+    mysql_user:
+      name: ''
+      host_all: yes
+      state: absent
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+    no_log: true
+
+  - name: Remove the MySQL test db
+    mysql_db:
+      name: test
+      state: absent
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+
+  - name: Create App Database
+    mysql_db:
+      name: patrickdb
+      state: present
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+
+  - name: Create user with grants access
+    mysql_user:
+      name: patricku
+      password: patrickp
+      priv: "patrickdb.*:ALL"
+      state: present
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+    no_log: true
+
+  - name: Create Postgre installer
+    template:
+      src: ./postgres.sh.j2
+      dest: ~/postgres.sh
+      mode: "0777"
+
+  - name: Run Installer
+    shell:
+      cmd: ~/postgres.sh
+
+  - name: Set .env file
+    template:
+      src: ./.env.j2
+      dest: /var/www/{{url}}/.env
+
+  - name: Installing Laravel dependencies
+    command: sudo  composer install --no-interaction --working-dir=/var/www/{{url}}
+    become: false
+
+  - name: Generate Laravel app key
+    command: "/usr/bin/php /var/www/{{url}}/artisan key:generate"
+    tags: [ 'laravel', 'artisan:key' ]
+
+  - name: Set up app storage link at slave
+    command: "/usr/bin/php /var/www/{{url}}/artisan storage:link"
+    tags: [ 'laravel', 'artisan:storage' ]
+
+  - name: Clear App Cache Data
+    command: "/usr/bin/php /var/www/{{url}}/artisan cache:clear"
+    tags: [ 'laravel', 'artisan:cache' ]
+
+  - name: clear App config
+    command: "/usr/bin/php /var/www/{{url}}/artisan config:clear"
+    tags: [ 'laravel', 'artisan:config' ]
+
+  - name: Run Migrations and  Seeders
+    command: "/usr/bin/php /var/www/{{url}}/artisan migrate:fresh --seed --force"
+    tags: [ 'laravel', 'artisan:migrate' ]
+    ignore_errors:  yes
+
+  - name: Install Cert Bot
+    apt:
+      name: python3-certbot-apache

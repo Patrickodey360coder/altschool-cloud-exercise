@@ -1,0 +1,1 @@
+worker ansible_host=172.31.28.201  ansible_connection=ssh ansible_user=ubuntu
