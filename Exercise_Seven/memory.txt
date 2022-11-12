@@ -1,0 +1,8 @@
+Sat 05 Nov 2022 12:07:36 WAT
+               total        used        free      shared  buff/cache   available
+Mem:         7998252     4960008      398628      327560     2639616     2406000
+Swap:        2097148       54340     2042808
+Sat 05 Nov 2022 12:07:47 WAT
+               total        used        free      shared  buff/cache   available
+Mem:         7998252     4963488      395112      327560     2639652     2402520
+Swap:        2097148       54340     2042808
